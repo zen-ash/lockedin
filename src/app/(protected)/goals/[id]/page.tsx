@@ -1,0 +1,221 @@
+import { redirect, notFound } from "next/navigation"
+import Link from "next/link"
+import { createClient } from "@/lib/supabase/server"
+import { buttonVariants } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
+import GoalProgressBar from "@/components/goals/GoalProgressBar"
+import DeleteGoalButton from "@/components/goals/DeleteGoalButton"
+import MonthlyGoalList from "@/components/monthly-goals/MonthlyGoalList"
+import { CATEGORY_LABELS, STATUS_LABELS } from "@/lib/goals-schema"
+import type { MonthlyGoal } from "@/types/app"
+
+const STATUS_STYLES: Record<string, string> = {
+  active:    "border-primary/30 bg-primary/10 text-primary",
+  completed: "border-emerald-300/60 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300",
+  paused:    "border-amber-300/60 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300",
+  abandoned: "border-border bg-muted/50 text-muted-foreground",
+}
+
+export default async function GoalDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>
+}) {
+  const { id } = await params
+
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) redirect("/auth/login")
+
+  const [{ data: goal }, { data: monthlyGoalsData }] = await Promise.all([
+    supabase
+      .from("goals")
+      .select("*")
+      .eq("id", id)
+      .eq("user_id", user.id)
+      .single(),
+    supabase
+      .from("monthly_goals")
+      .select("*")
+      .eq("goal_id", id)
+      .eq("user_id", user.id)
+      .order("month_start", { ascending: false }),
+  ])
+
+  if (!goal) notFound()
+
+  const monthlyGoals = (monthlyGoalsData ?? []) as MonthlyGoal[]
+
+  // Weighted execution progress from monthly goals
+  const totalWeight    = monthlyGoals.reduce((s, mg) => s + mg.weight, 0)
+  const executionProgress =
+    totalWeight > 0
+      ? Math.round(
+          monthlyGoals.reduce((s, mg) => s + mg.progress_pct * mg.weight, 0) / totalWeight,
+        )
+      : goal.progress_pct
+
+  const targetDate = goal.target_date
+    ? new Date(goal.target_date + "T00:00:00").toLocaleDateString("en-US", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      })
+    : null
+
+  const createdAt = new Date(goal.created_at).toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  })
+
+  const updatedAt = new Date(goal.updated_at).toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  })
+
+  return (
+    <div className="flex flex-col gap-6">
+      {/* Back */}
+      <Link
+        href="/goals"
+        className="inline-block text-sm text-muted-foreground transition-colors hover:text-foreground"
+      >
+        ← Goals
+      </Link>
+
+      {/* Header */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full border border-border bg-muted/50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              {CATEGORY_LABELS[goal.category] ?? goal.category}
+            </span>
+            <span
+              className={cn(
+                "rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+                STATUS_STYLES[goal.status] ?? STATUS_STYLES.abandoned,
+              )}
+            >
+              {STATUS_LABELS[goal.status] ?? goal.status}
+            </span>
+          </div>
+          <h1 className="font-serif text-2xl font-bold tracking-tight text-foreground">
+            {goal.title}
+          </h1>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-2">
+          <Link
+            href={`/goals/${id}/edit`}
+            className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+          >
+            Edit
+          </Link>
+          <DeleteGoalButton goalId={id} />
+        </div>
+      </div>
+
+      {/* Body */}
+      <div className="grid gap-6 lg:grid-cols-3">
+        {/* Main content */}
+        <div className="flex flex-col gap-5 lg:col-span-2">
+          {/* Execution Progress (weighted from monthly goals) */}
+          <div className="rounded-xl border border-border bg-card p-5">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <p className="text-sm font-medium text-foreground">
+                {monthlyGoals.length > 0 ? "Execution Progress" : "Progress"}
+              </p>
+              {monthlyGoals.length > 0 && (
+                <span className="text-xs text-muted-foreground">
+                  weighted avg. from {monthlyGoals.length} monthly goal{monthlyGoals.length !== 1 ? "s" : ""}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center justify-between">
+              <GoalProgressBar value={executionProgress} className="flex-1" />
+              <span className="ml-4 text-2xl font-bold text-foreground">
+                {executionProgress}%
+              </span>
+            </div>
+          </div>
+
+          {/* Description */}
+          {goal.description && (
+            <div className="rounded-xl border border-border bg-card p-5">
+              <p className="mb-2 text-sm font-medium text-foreground">Description</p>
+              <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+                {goal.description}
+              </p>
+            </div>
+          )}
+
+          {/* Monthly Goals section */}
+          <div>
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">
+                Monthly Goals
+              </h2>
+              <Link
+                href={`/goals/${id}/monthly/new`}
+                className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+              >
+                + Add Monthly Goal
+              </Link>
+            </div>
+
+            {monthlyGoals.length === 0 ? (
+              <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-10 text-center">
+                <p className="text-sm text-muted-foreground">
+                  No monthly goals yet. Break this goal into monthly milestones.
+                </p>
+                <Link
+                  href={`/goals/${id}/monthly/new`}
+                  className={cn(
+                    buttonVariants({ variant: "outline", size: "sm" }),
+                    "mt-3",
+                  )}
+                >
+                  Add first monthly goal
+                </Link>
+              </div>
+            ) : (
+              <MonthlyGoalList monthlyGoals={monthlyGoals} />
+            )}
+          </div>
+        </div>
+
+        {/* Meta sidebar */}
+        <div className="flex flex-col gap-3">
+          <div className="rounded-xl border border-border bg-card p-5">
+            <dl className="flex flex-col gap-4">
+              {targetDate && (
+                <div>
+                  <dt className="text-xs text-muted-foreground">Target Date</dt>
+                  <dd className="mt-0.5 text-sm font-medium text-foreground">
+                    {targetDate}
+                  </dd>
+                </div>
+              )}
+              <div>
+                <dt className="text-xs text-muted-foreground">Created</dt>
+                <dd className="mt-0.5 text-sm font-medium text-foreground">
+                  {createdAt}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted-foreground">Last Updated</dt>
+                <dd className="mt-0.5 text-sm font-medium text-foreground">
+                  {updatedAt}
+                </dd>
+              </div>
+            </dl>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
