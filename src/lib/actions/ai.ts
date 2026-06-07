@@ -149,7 +149,8 @@ export async function suggestMonthlyGoalWeight(
       reasoning:  result.object.reasoning,
       source:     "ai",
     }
-  } catch {
+  } catch (err) {
+    console.error("[suggestMonthlyGoalWeight] AI call failed:", err)
     // Graceful fallback to deterministic heuristic
     return suggestMonthlyGoalWeightHeuristic({
       title,
@@ -195,7 +196,8 @@ const blueprintAiOutputSchema = z.object({
     title:       z.string().min(1).max(300),
     description: z.string().min(1).max(2000),
     deadline:    z.string().regex(ISO_DATE_REGEX, "Must be YYYY-MM-DD"),
-    category:    z.string().max(50).optional(),
+    // nullable (not optional) — OpenAI strict structured outputs require every key present
+    category:    z.string().max(50).nullable(),
   }),
   monthlyGoals: z
     .array(
@@ -204,8 +206,8 @@ const blueprintAiOutputSchema = z.object({
         title:        z.string().min(1).max(300),
         description:  z.string().min(1).max(1000),
         month_start:  z.string().regex(ISO_DATE_REGEX, "Must be YYYY-MM-DD"),
-        target_value: z.number().positive().optional(),
-        target_unit:  z.string().max(50).optional(),
+        target_value: z.number().positive().nullable(),
+        target_unit:  z.string().max(50).nullable(),
         impactLevel:  z.enum(["supporting", "important", "critical"]),
         weight:       z.union([z.literal(1), z.literal(2), z.literal(3)]),
         reasoning:    z.string().min(1).max(300),
@@ -221,8 +223,8 @@ const blueprintAiOutputSchema = z.object({
         title:         z.string().min(1).max(300),
         description:   z.string().min(1).max(1000),
         week_start:    z.string().regex(ISO_DATE_REGEX, "Must be YYYY-MM-DD"),
-        target_value:  z.number().positive().optional(),
-        target_unit:   z.string().max(50).optional(),
+        target_value:  z.number().positive().nullable(),
+        target_unit:   z.string().max(50).nullable(),
         reasoning:     z.string().min(1).max(300),
       }),
     )
@@ -416,10 +418,35 @@ export async function generateGoalBlueprint(
       throw new Error("Blueprint failed consistency validation")
     }
 
+    // Normalize null → undefined to match BlueprintDraft's optional fields
     const blueprint: BlueprintDraft = {
-      longTermGoal: result.object.longTermGoal,
-      monthlyGoals: result.object.monthlyGoals,
-      weeklyGoals:  result.object.weeklyGoals,
+      longTermGoal: {
+        title:       result.object.longTermGoal.title,
+        description: result.object.longTermGoal.description,
+        deadline:    result.object.longTermGoal.deadline,
+        category:    result.object.longTermGoal.category ?? undefined,
+      },
+      monthlyGoals: result.object.monthlyGoals.map((mg) => ({
+        tempId:       mg.tempId,
+        title:        mg.title,
+        description:  mg.description,
+        month_start:  mg.month_start,
+        target_value: mg.target_value ?? undefined,
+        target_unit:  mg.target_unit ?? undefined,
+        impactLevel:  mg.impactLevel,
+        weight:       mg.weight,
+        reasoning:    mg.reasoning,
+      })),
+      weeklyGoals: result.object.weeklyGoals.map((wg) => ({
+        tempId:        wg.tempId,
+        monthlyTempId: wg.monthlyTempId,
+        title:         wg.title,
+        description:   wg.description,
+        week_start:    wg.week_start,
+        target_value:  wg.target_value ?? undefined,
+        target_unit:   wg.target_unit ?? undefined,
+        reasoning:     wg.reasoning,
+      })),
       summary:      result.object.summary,
       assumptions:  result.object.assumptions,
       source:       "ai",
@@ -427,7 +454,9 @@ export async function generateGoalBlueprint(
     }
 
     return { success: true, blueprint }
-  } catch {
+  } catch (err) {
+    // Log the real error to server console so it can be diagnosed
+    console.error("[generateGoalBlueprint] AI call failed:", err)
     // Graceful fallback — raw errors never reach the client
     try {
       const blueprint = generateFallbackBlueprint(blueprintInput, currentDate)
