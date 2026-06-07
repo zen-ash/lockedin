@@ -184,6 +184,7 @@ export async function lockInBlueprint(
     .single()
 
   if (goalError || !goalRow) {
+    console.error("[lockInBlueprint] goal insert failed:", goalError)
     return { success: false, error: "Could not create the long-term goal. Please try again." }
   }
   insertedGoalId = goalRow.id
@@ -212,6 +213,7 @@ export async function lockInBlueprint(
       .single()
 
     if (mgError || !mgRow) {
+      console.error("[lockInBlueprint] monthly_goals insert failed:", mgError, "\npayload:", mg)
       await cleanup()
       return {
         success: false,
@@ -259,6 +261,7 @@ export async function lockInBlueprint(
       .single()
 
     if (wgError || !wgRow) {
+      console.error("[lockInBlueprint] weekly_tasks insert failed:", wgError, "\npayload:", wg)
       await cleanup()
       return {
         success: false,
