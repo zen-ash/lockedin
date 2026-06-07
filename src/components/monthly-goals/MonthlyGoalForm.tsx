@@ -4,6 +4,8 @@ import { useState, useTransition } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import Link from "next/link"
+import { Sparkles } from "lucide-react"
+import { toast } from "sonner"
 import {
   monthlyGoalFormSchema,
   MONTHLY_GOAL_STATUSES,
@@ -13,6 +15,8 @@ import {
 } from "@/lib/monthly-goals-schema"
 import type { MonthlyGoalFormData, MonthlyGoalCategory } from "@/lib/monthly-goals-schema"
 import { createMonthlyGoal, updateMonthlyGoal } from "@/lib/actions/monthly-goals"
+import { suggestMonthlyGoalWeight } from "@/lib/actions/ai"
+import { getWeightLabel } from "@/lib/utils/weight-suggestions"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -31,6 +35,12 @@ const selectCls =
 const textareaCls =
   "min-h-[88px] w-full min-w-0 resize-none rounded-lg border border-input bg-background px-2.5 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50"
 
+const IMPACT_OPTIONS = [
+  { value: 1, label: "Supporting" },
+  { value: 2, label: "Important" },
+  { value: 3, label: "Critical" },
+] as const
+
 interface MonthlyGoalFormProps {
   mode: "create" | "edit"
   goalId: string
@@ -48,6 +58,7 @@ export default function MonthlyGoalForm({
 }: MonthlyGoalFormProps) {
   const [serverError, setServerError] = useState("")
   const [isPending, startTransition] = useTransition()
+  const [isCalibrating, setIsCalibrating] = useState(false)
 
   const form = useForm<MonthlyGoalFormData>({
     resolver: zodResolver(monthlyGoalFormSchema),
@@ -63,6 +74,46 @@ export default function MonthlyGoalForm({
       ...defaultValues,
     },
   })
+
+  const watchedTitle = form.watch("title")
+  const canCalibrate = watchedTitle.trim().length > 0 && !isCalibrating && !isPending
+
+  async function handleAutoCalibrate() {
+    if (!canCalibrate) return
+    setIsCalibrating(true)
+    try {
+      const values = form.getValues()
+      const result = await suggestMonthlyGoalWeight({
+        goal_id:      goalId,
+        title:        values.title,
+        description:  values.description,
+        target_value: values.target_value,
+        target_unit:  values.target_unit,
+        month_start:  values.month_start,
+      })
+
+      if ("error" in result) {
+        toast.error("Could not calibrate impact level. You can still choose one manually.")
+        return
+      }
+
+      form.setValue("weight", result.weight, { shouldValidate: true })
+
+      if (result.source === "ai") {
+        toast.success(
+          `Suggested impact: ${getWeightLabel(result.weight)} — ${result.reasoning}`,
+        )
+      } else {
+        toast.success(
+          `Using a local suggestion — Suggested impact: ${getWeightLabel(result.weight)}. ${result.reasoning}`,
+        )
+      }
+    } catch {
+      toast.error("Could not calibrate impact level. You can still choose one manually.")
+    } finally {
+      setIsCalibrating(false)
+    }
+  }
 
   function onSubmit(data: MonthlyGoalFormData) {
     setServerError("")
@@ -197,35 +248,65 @@ export default function MonthlyGoalForm({
           />
         </div>
 
-        {/* Weight */}
+        {/* Impact Level */}
         <FormField
           control={form.control}
           name="weight"
-          render={({ field, fieldState }) => (
-            <FormItem>
-              <FormLabel>Weight</FormLabel>
-              <Input
-                id={`${field.name}-item`}
-                name={field.name}
-                ref={field.ref}
-                type="number"
-                min={0.1}
-                step={0.5}
-                value={field.value ?? 1}
-                onBlur={field.onBlur}
-                onChange={(e) => {
-                  const v = parseFloat(e.target.value)
-                  field.onChange(isNaN(v) ? 1 : Math.max(0.1, v))
-                }}
-                aria-invalid={!!fieldState.error}
-                disabled={isPending}
-              />
-              <FormDescription>
-                How much this milestone counts toward the parent goal's progress. Default is 1.
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
+          render={({ field, fieldState }) => {
+            const isCustom = !IMPACT_OPTIONS.some((o) => o.value === field.value)
+            return (
+              <FormItem>
+                <div className="flex items-center justify-between gap-2">
+                  <FormLabel>Impact Level</FormLabel>
+                  <button
+                    type="button"
+                    onClick={handleAutoCalibrate}
+                    disabled={!canCalibrate}
+                    aria-label="Auto-calibrate suggested impact level using AI"
+                    className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <Sparkles className="h-3 w-3" aria-hidden="true" />
+                    {isCalibrating ? "Calibrating…" : "Auto-Calibrate"}
+                  </button>
+                </div>
+                <select
+                  id={`${field.name}-item`}
+                  name={field.name}
+                  ref={field.ref}
+                  value={isCustom ? "custom" : String(field.value)}
+                  onBlur={field.onBlur}
+                  onChange={(e) => {
+                    if (e.target.value === "custom") return
+                    field.onChange(parseInt(e.target.value, 10))
+                  }}
+                  className={cn(selectCls, fieldState.error && "border-destructive")}
+                  disabled={isPending || isCalibrating}
+                  aria-invalid={!!fieldState.error}
+                >
+                  {isCustom && (
+                    <option value="custom" disabled>
+                      Custom Impact ({field.value})
+                    </option>
+                  )}
+                  {IMPACT_OPTIONS.map((o) => (
+                    <option key={o.value} value={String(o.value)}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+                <FormDescription>
+                  Impact level controls how much this monthly goal influences your long-term
+                  progress compared with your other monthly goals.
+                </FormDescription>
+                <p className="mt-0.5 text-[0.8rem] leading-relaxed text-muted-foreground/70">
+                  Choose Critical for direct outcome work, Important for meaningful progress, and
+                  Supporting for helpful prep work. Auto-Calibrate uses your parent goal and draft
+                  milestone to suggest a level.
+                </p>
+                <FormMessage />
+              </FormItem>
+            )
+          }}
         />
 
         {/* Target Value + Target Unit */}
@@ -291,7 +372,7 @@ export default function MonthlyGoalForm({
         )}
 
         <div className="flex items-center gap-3 pt-1">
-          <Button type="submit" disabled={isPending}>
+          <Button type="submit" disabled={isPending || isCalibrating}>
             {isPending
               ? mode === "create"
                 ? "Creating…"

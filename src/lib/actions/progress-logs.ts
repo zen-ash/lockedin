@@ -5,6 +5,25 @@ import { createClient } from "@/lib/supabase/server"
 import { createProgressLogSchema, updateProgressLogSchema } from "@/lib/progress-logs-schema"
 import type { CreateProgressLogData, UpdateProgressLogData } from "@/lib/progress-logs-schema"
 
+// Resolves the parent goal id for a task.
+// For tasks with goal_id set directly (manual tasks), returns it immediately.
+// For blueprint tasks (goal_id null, monthly_goal_id set), follows the monthly goal FK.
+async function resolveGoalId(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  task: { goal_id: string | null; monthly_goal_id: string | null },
+  userId: string,
+): Promise<string | null> {
+  if (task.goal_id) return task.goal_id
+  if (!task.monthly_goal_id) return null
+  const { data: mg } = await supabase
+    .from("monthly_goals")
+    .select("goal_id")
+    .eq("id", task.monthly_goal_id)
+    .eq("user_id", userId)
+    .single()
+  return mg?.goal_id ?? null
+}
+
 export async function createProgressLog(
   data: CreateProgressLogData,
 ): Promise<{ error?: string }> {
@@ -39,7 +58,10 @@ export async function createProgressLog(
 
   revalidatePath(`/tasks/${parsed.data.weekly_task_id}`)
   if (task.monthly_goal_id) revalidatePath(`/monthly-goals/${task.monthly_goal_id}`)
-  if (task.goal_id) revalidatePath(`/goals/${task.goal_id}`)
+
+  const goalId = await resolveGoalId(supabase, task, user.id)
+  if (goalId) revalidatePath(`/goals/${goalId}`)
+
   revalidatePath("/tasks")
   revalidatePath("/dashboard")
   return {}
@@ -88,7 +110,12 @@ export async function updateProgressLog(
 
   revalidatePath(`/tasks/${log.weekly_task_id}`)
   if (task?.monthly_goal_id) revalidatePath(`/monthly-goals/${task.monthly_goal_id}`)
-  if (task?.goal_id) revalidatePath(`/goals/${task.goal_id}`)
+
+  if (task) {
+    const goalId = await resolveGoalId(supabase, task, user.id)
+    if (goalId) revalidatePath(`/goals/${goalId}`)
+  }
+
   revalidatePath("/tasks")
   revalidatePath("/dashboard")
   return {}
@@ -126,7 +153,12 @@ export async function deleteProgressLog(logId: string): Promise<{ error?: string
 
   revalidatePath(`/tasks/${log.weekly_task_id}`)
   if (task?.monthly_goal_id) revalidatePath(`/monthly-goals/${task.monthly_goal_id}`)
-  if (task?.goal_id) revalidatePath(`/goals/${task.goal_id}`)
+
+  if (task) {
+    const goalId = await resolveGoalId(supabase, task, user.id)
+    if (goalId) revalidatePath(`/goals/${goalId}`)
+  }
+
   revalidatePath("/tasks")
   revalidatePath("/dashboard")
   return {}

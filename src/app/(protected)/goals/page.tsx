@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation"
 import Link from "next/link"
+import { Sparkles } from "lucide-react"
 import { createClient } from "@/lib/supabase/server"
 import { buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -41,24 +42,45 @@ export default async function GoalsPage({
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
-            Long-Term Goals
-          </p>
-          <h1 className="font-serif text-3xl font-bold tracking-tight text-foreground">
-            Build what <span className="italic text-primary">matters.</span>
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Define your objectives. Break them down. Track the distance.
-          </p>
+      <div>
+        <p className="text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
+          Long-Term Goals
+        </p>
+        <h1 className="font-serif text-3xl font-bold tracking-tight text-foreground">
+          Build what <span className="italic text-primary">matters.</span>
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Define your objectives. Break them down. Track the distance.
+        </p>
+      </div>
+
+      {/* Blueprint discovery CTA */}
+      <div className="rounded-xl border border-border bg-card p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-foreground">
+              Start faster with a blueprint
+            </p>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              Turn one ambition into monthly milestones and this week&apos;s execution plan.
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <Link
+              href="/blueprint/new"
+              className={cn(buttonVariants({ variant: "default", size: "sm" }))}
+            >
+              <Sparkles className="size-3.5" aria-hidden="true" />
+              Generate Blueprint
+            </Link>
+            <Link
+              href="/goals/new"
+              className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+            >
+              New Goal
+            </Link>
+          </div>
         </div>
-        <Link
-          href="/goals/new"
-          className={cn(buttonVariants({ variant: "default" }), "mt-1 shrink-0")}
-        >
-          New Goal
-        </Link>
       </div>
 
       {/* Filters */}

@@ -11,6 +11,11 @@ import {
 } from "@/lib/monthly-goals-schema"
 import { STATUS_LABELS, PRIORITY_LABELS } from "@/lib/tasks-schema"
 import { formatMonthStart } from "@/lib/utils/week"
+import {
+  getWeightLabel,
+  getWeightExplanation,
+  getWeightBadgeClasses,
+} from "@/lib/utils/weight-suggestions"
 import type { WeeklyTask } from "@/types/app"
 
 const STATUS_STYLES: Record<string, string> = {
@@ -279,14 +284,17 @@ export default async function MonthlyGoalDetailPage({
                   </dd>
                 </div>
               )}
-              {mg.weight !== 1 && (
-                <div>
-                  <dt className="text-xs text-muted-foreground">Weight</dt>
-                  <dd className="mt-0.5 text-sm font-medium text-foreground">
-                    {mg.weight}
-                  </dd>
-                </div>
-              )}
+              <div>
+                <dt className="text-xs text-muted-foreground">Impact</dt>
+                <dd className="mt-1">
+                  <span className={getWeightBadgeClasses(mg.weight)}>
+                    {getWeightLabel(mg.weight)}
+                  </span>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {getWeightExplanation(mg.weight)}
+                  </p>
+                </dd>
+              </div>
               <div>
                 <dt className="text-xs text-muted-foreground">Created</dt>
                 <dd className="mt-0.5 text-sm font-medium text-foreground">
