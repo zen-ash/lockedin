@@ -3,6 +3,7 @@
 import { z } from "zod"
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
+import { snapToMondayUTC, snapToMonthStartUTC } from "@/lib/utils/week"
 import type { BlueprintDraft } from "@/lib/utils/blueprint-types"
 
 // ── Validation ────────────────────────────────────────────────────────────────
@@ -199,7 +200,8 @@ export async function lockInBlueprint(
       .insert({
         user_id:      userId,
         goal_id:      insertedGoalId,
-        month_start:  mg.month_start,
+        // Snap to first of month — matches the monthly_goals month_start convention
+        month_start:  snapToMonthStartUTC(mg.month_start),
         title:        mg.title.trim(),
         description:  mg.description?.trim() || null,
         category:     null,
@@ -245,7 +247,8 @@ export async function lockInBlueprint(
         monthly_goal_id: realMonthlyId,
         goal_id:         null,
         group_id:        null,
-        week_start:      wg.week_start,
+        // Snap to Monday — DB enforces weekly_tasks_week_start_monday
+        week_start:      snapToMondayUTC(wg.week_start),
         title:           wg.title.trim(),
         description:     wg.description?.trim() || null,
         category:        null,

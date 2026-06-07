@@ -34,6 +34,27 @@ export function formatDateForSupabase(date: Date): string {
   return `${year}-${month}-${day}`
 }
 
+// Snap any YYYY-MM-DD date string to the Monday of its week (UTC).
+// Used to satisfy the weekly_tasks_week_start_monday DB check constraint when
+// an upstream source (e.g. AI blueprint) returns a non-Monday week_start.
+export function snapToMondayUTC(dateStr: string): string {
+  const d = new Date(dateStr + "T00:00:00Z")
+  if (isNaN(d.getTime())) return dateStr
+  const day = d.getUTCDay() // 0=Sun, 1=Mon, ... 6=Sat
+  const daysFromMonday = day === 0 ? 6 : day - 1
+  d.setUTCDate(d.getUTCDate() - daysFromMonday)
+  return formatDateForSupabase(d)
+}
+
+// Snap any YYYY-MM-DD date string to the first day of its month (UTC).
+// Mirrors snapToMondayUTC for the monthly_goals month_start convention.
+export function snapToMonthStartUTC(dateStr: string): string {
+  const d = new Date(dateStr + "T00:00:00Z")
+  if (isNaN(d.getTime())) return dateStr
+  d.setUTCDate(1)
+  return formatDateForSupabase(d)
+}
+
 export function formatMonthStart(monthStart: string): string {
   const date = new Date(monthStart + "T00:00:00Z")
   return date.toLocaleDateString("en-US", {
